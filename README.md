@@ -1,0 +1,2 @@
+# waifu2x-webGPU
+webGPUでローカルサイドに動作するweb上のwaifu2x
