@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waifu2x WebGPU — ローカル画像アップスケーラー</title>
+    <meta name="description" content="WebGPUを使用してブラウザ内でwaifu2xモデルを実行。サーバーへの画像送信不要。完全ローカル処理。">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="bg-effects">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="2" width="28" height="28" rx="6" stroke="url(#g1)" stroke-width="2.5"/>
+                    <path d="M9 16L14 11L19 16L24 11" stroke="url(#g1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 21L14 16L19 21L24 16" stroke="url(#g1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+                    <defs>
+                        <linearGradient id="g1" x1="0" y1="0" x2="32" y2="32">
+                            <stop stop-color="#a78bfa"/>
+                            <stop offset="1" stop-color="#f472b6"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div>
+                    <h1>Waifu2x <span class="gradient-text">WebGPU</span></h1>
+                    <p class="tagline">完全ローカル処理 — 画像はサーバーに送信されません</p>
+                </div>
+            </div>
+        </header>
+
+        <div id="gpu-warning" class="alert alert-warning hidden">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2L1 18H19L10 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8V12M10 14.5V15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <p>お使いのブラウザはWebGPUに対応していません。<br>Chrome 113以降 または Edge 113以降をご使用ください。</p>
+        </div>
+
+        <main class="main">
+            <!-- Upload Section -->
+            <section id="upload-section" class="section">
+                <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="画像をアップロード">
+                    <div class="drop-zone-inner">
+                        <div class="upload-icon-wrap">
+                            <svg class="upload-icon" viewBox="0 0 48 48" fill="none">
+                                <rect x="6" y="10" width="36" height="28" rx="4" stroke="currentColor" stroke-width="2"/>
+                                <circle cx="17" cy="22" r="3" stroke="currentColor" stroke-width="2"/>
+                                <path d="M6 32L16 24L24 30L32 22L42 30" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M24 6V14M20 10H28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+                        <p class="drop-text">ここに画像をドロップ</p>
+                        <p class="drop-subtext">または クリックして選択</p>
+                        <span class="supported-formats">PNG / JPEG / WebP 対応</span>
+                    </div>
+                    <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" hidden>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings-section" class="section hidden">
+                <div class="card settings-card">
+                    <div class="preview-area">
+                        <img id="preview-img" src="" alt="プレビュー">
+                        <div class="preview-info">
+                            <span id="img-info"></span>
+                        </div>
+                    </div>
+
+                    <div class="settings-grid">
+                        <div class="setting-group">
+                            <label class="setting-label">スタイル</label>
+                            <div class="btn-group" id="style-group">
+                                <button class="btn-toggle active" data-value="art">
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 14L6 4L10 10L14 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    イラスト
+                                </button>
+                                <button class="btn-toggle" data-value="photo">
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="5.5" cy="7" r="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+                                    写真
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="setting-group">
+                            <label class="setting-label">処理モード</label>
+                            <div class="btn-group" id="mode-group">
+                                <button class="btn-toggle" data-value="noise">ノイズ除去</button>
+                                <button class="btn-toggle active" data-value="scale">2x拡大</button>
+                                <button class="btn-toggle" data-value="noise_scale">除去+拡大</button>
+                            </div>
+                        </div>
+
+                        <div class="setting-group" id="noise-level-group">
+                            <label class="setting-label">ノイズ除去レベル</label>
+                            <div class="btn-group" id="noise-group">
+                                <button class="btn-toggle" data-value="1">低</button>
+                                <button class="btn-toggle active" data-value="2">中</button>
+                                <button class="btn-toggle" data-value="3">高</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="process-btn" class="btn-primary">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10H16M16 10L11 5M16 10L11 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span>処理開始</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section id="progress-section" class="section hidden">
+                <div class="card progress-card">
+                    <div class="processing-animation">
+                        <div class="pulse-ring"></div>
+                        <div class="pulse-ring delay-1"></div>
+                        <div class="pulse-ring delay-2"></div>
+                        <svg class="processing-icon" width="40" height="40" viewBox="0 0 40 40" fill="none">
+                            <rect x="4" y="8" width="32" height="24" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <path d="M14 20L18 24L26 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progress-text">準備中...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Result Section -->
+            <section id="result-section" class="section hidden">
+                <div class="card result-card">
+                    <div class="comparison-container" id="comparison-container">
+                        <canvas id="original-canvas" class="comparison-canvas"></canvas>
+                        <canvas id="result-canvas" class="comparison-canvas result-overlay"></canvas>
+                        <div class="slider-line" id="slider-line">
+                            <div class="slider-handle">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                    <path d="M7 4L3 10L7 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M13 4L17 10L13 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="comparison-label label-left">元画像</div>
+                        <div class="comparison-label label-right">処理後</div>
+                    </div>
+                    <div class="result-info" id="result-info"></div>
+                    <div class="result-actions">
+                        <button id="download-btn" class="btn-primary">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3V13M10 13L6 9M10 13L14 9M3 17H17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            ダウンロード
+                        </button>
+                        <button id="new-btn" class="btn-secondary">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4V16M4 10H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                            新しい画像
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Powered by <span class="gradient-text">WebGPU</span> — Model: <a href="https://github.com/nagadomi/waifu2x" target="_blank" rel="noopener">waifu2x (nagadomi)</a></p>
+        </footer>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
